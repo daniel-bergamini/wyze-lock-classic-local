@@ -1,20 +1,13 @@
 #!/usr/bin/env python3
-"""Stage 3: actuate the lock via the full challenge-response handshake.
+"""Actuate / read the lock via the WyzeLockClassic transport. MOVES THE BOLT.
 
-THIS MOVES THE PHYSICAL DEADBOLT. Mirrors the Wyze app's sequence:
-
-  1. write the 00002250 hello/prime block
-  2. subscribe to the NUS notify char
-  3. write the challenge request (seq 0)
-  4. receive the lock's ACK + 0x86 challenge (nonce)
-  5. send our ACK, then the lock/unlock frame answering the nonce
-  6. read state back to confirm
-
-ble_id / ble_token are read from the cloud probe dump by uuid (gitignored),
-or pass them explicitly. --action is required (no default).
+A thin CLI over src/wyze_lock_classic_local/device.py so the library gets
+exercised against real hardware. ble_id / ble_token are read from the cloud
+probe dump by uuid (gitignored), or passed explicitly.
 
     python scripts/actuate.py --address AA:BB:CC:DD:EE:FF \
         --uuid 0123456789abcdef0123456789abcdef --action unlock
+    python scripts/actuate.py --address ... --uuid ... --action state
 """
 
 from __future__ import annotations
@@ -28,131 +21,44 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 try:
-    from bleak import BleakClient, BleakScanner
-    from bleak_retry_connector import establish_connection
-except ImportError:
-    sys.exit("bleak / bleak-retry-connector not importable; see scripts/requirements.txt")
-
-from wyze_lock_classic_local import protocol as p
+    from wyze_lock_classic_local.device import WyzeLockClassic
+except ImportError as err:
+    sys.exit(f"cannot import transport ({err}); need bleak — see scripts/requirements.txt")
 
 
 def load_token(uuid: str, dump_path: str):
-    j = json.load(open(dump_path))
-    for dev in j.get("devices", []):
-        src = dev.get("sources", {}).get("lock/v1/ble/token", {})
-        for k, v in src.items():
+    for dev in json.load(open(dump_path)).get("devices", []):
+        for v in dev.get("sources", {}).get("lock/v1/ble/token", {}).values():
             if isinstance(v, dict) and v.get("token", {}).get("uuid") == uuid:
                 return v["token"]["id"], v["_decrypted_token"]
     raise SystemExit(f"no ble token for uuid {uuid} in {dump_path}")
 
 
-async def read_state(client, uuid):
-    return p.decode_state(uuid, await client.read_gatt_char(p.LOCK_STATE_UUID))
-
-
-async def run(address, uuid, ble_id, ble_token, lock, dump_path):
+async def main_async(args):
+    ble_id, ble_token = args.ble_id, args.ble_token
     if ble_id is None or ble_token is None:
-        ble_id, ble_token = load_token(uuid, dump_path)
+        ble_id, ble_token = load_token(args.uuid, args.dump)
 
-    device = await BleakScanner.find_device_by_address(address, timeout=15.0)
-    if device is None:
-        sys.exit(f"Device {address} not found; is it in range?")
-    print(f"Connecting to {device.address} ({device.name!r})...")
-    client = await establish_connection(BleakClient, device, device.name or address)
-
-    rx = bytearray()
-    done = asyncio.Event()
-    state_changed = asyncio.Event()
-    result = {"stage": "init", "sent_answer": False, "new_state": None}
-
-    async def send(frame):
-        await client.write_gatt_char(p.NUS_WRITE_UUID, frame, response=False)
-
-    def on_notify(_s, data):
-        rx.extend(data)
-        try:
-            frame = p.parse_l1(bytes(rx))
-        except ValueError:
-            rx.clear()
-            return
-        if not frame.complete:
-            return
-        rx.clear()
-        if frame.flags == p.L1_FLAG_LOCK_ACK:
-            print(f"    <- lock ACK (seq {frame.seq})")
-            return
-        if frame.flags == p.L1_FLAG_DATA and frame.body:
-            cmd, _f, tlvs = p.parse_l2(frame.body)
-            print(f"    <- data cmd=0x{cmd:02x} seq={frame.seq} "
-                  + " ".join(f"{hex(k)}={v.hex()}" for k, v in tlvs.items()))
-            if cmd == p.L2_CMD_CHALLENGE and p.TAG_CHALLENGE in tlvs and not result["sent_answer"]:
-                nonce = tlvs[p.TAG_CHALLENGE]
-                result["sent_answer"] = True
-                answer = p.build_lock_unlock(ble_id, ble_token, nonce, lock=lock, seq=1)
-                print(f"    -> ACK + {'LOCK' if lock else 'UNLOCK'} answer to nonce {nonce.hex()}")
-                asyncio.create_task(send(p.build_ack(frame.seq)))
-                asyncio.create_task(send(answer))
-            elif cmd == p.L2_CMD_LOCK_UNLOCK:
-                print("    <- lock/unlock RESULT received")
-                done.set()
-
-    def on_state(_s, data):
-        try:
-            st = p.decode_state(uuid, bytes(data))
-        except Exception:  # noqa: BLE001
-            return
-        result["new_state"] = st
-        print(f"    <- state notify: {'LOCKED' if st.locked else 'UNLOCKED'} (0x{st.status_byte:02x})")
-        state_changed.set()
-
-    try:
-        before = await read_state(client, uuid)
-        print(f"BEFORE: {'LOCKED' if before.locked else 'UNLOCKED'} (0x{before.status_byte:02x})")
-
-        await client.start_notify(p.LOCK_STATE_UUID, on_state)
-        await client.start_notify(p.NUS_NOTIFY_UUID, on_notify)
-        print("-> hello (00002250)")
-        await client.write_gatt_char(p.LOCK_CMD_UUID, p.build_hello(uuid), response=False)
-        await asyncio.sleep(0.3)
-        print(f"-> {'LOCK' if lock else 'UNLOCK'} via challenge request (seq 0)")
-        await send(p.build_challenge_request(seq=0))
-
-        try:
-            await asyncio.wait_for(done.wait(), timeout=10)
-        except asyncio.TimeoutError:
-            print("    (no result frame within 10s)")
-
-        # The bolt moves after the result; the new state arrives as a
-        # notification on 00002220 a moment later. Wait for it (or fall back
-        # to a fresh read) rather than reading too early.
-        try:
-            await asyncio.wait_for(state_changed.wait(), timeout=6)
-        except asyncio.TimeoutError:
-            pass
-        after = result["new_state"] or await read_state(client, uuid)
-        print(f"AFTER:  {'LOCKED' if after.locked else 'UNLOCKED'} (0x{after.status_byte:02x})")
-        if after.status_byte != before.status_byte:
-            print(f"\nActuated: 0x{before.status_byte:02x} -> 0x{after.status_byte:02x}.")
-        else:
-            print("\nNo state change (already in that state, or command not accepted).")
-    finally:
-        try:
-            await client.disconnect()
-        except Exception:  # noqa: BLE001
-            pass
+    lock = WyzeLockClassic(args.uuid, ble_id, ble_token)
+    if args.action == "state":
+        st = await lock.async_get_state(address=args.address)
+    else:
+        print(f"Actuating: {args.action} (this moves the bolt)...")
+        st = await lock.async_set(args.action == "lock", address=args.address)
+    print(f"State: {'LOCKED' if st.locked else 'UNLOCKED'} "
+          f"(status=0x{st.status_byte:02x}, ts={st.timestamp})")
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     ap.add_argument("--address", required=True)
     ap.add_argument("--uuid", required=True)
-    ap.add_argument("--action", required=True, choices=["lock", "unlock"])
+    ap.add_argument("--action", required=True, choices=["lock", "unlock", "state"])
     ap.add_argument("--ble-id", type=int)
     ap.add_argument("--ble-token")
     ap.add_argument("--dump", default=os.path.join(
         os.path.dirname(__file__), "..", "tools", "wyze_probe_dump.json"))
-    a = ap.parse_args()
-    asyncio.run(run(a.address, a.uuid, a.ble_id, a.ble_token, a.action == "lock", a.dump))
+    asyncio.run(main_async(ap.parse_args()))
 
 
 if __name__ == "__main__":
