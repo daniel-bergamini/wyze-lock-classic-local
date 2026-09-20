@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Wyze Lock Classic local BLE">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#33436b"/>
+      <stop offset="1" stop-color="#1a2340"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <!-- padlock shackle -->
+  <path d="M206 258 V196 A50 50 0 0 1 306 196 V258" fill="none" stroke="#ffffff" stroke-width="30" stroke-linecap="round"/>
+  <!-- padlock body -->
+  <rect x="151" y="250" width="210" height="170" rx="34" fill="#ffffff"/>
+  <!-- Bluetooth glyph as the lock emblem -->
+  <g transform="translate(205.6,283.6) scale(4.2)">
+    <path d="M7 7 L17 17 L12 22 V2 L17 7 L7 17" fill="none" stroke="#28365a" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+  </g>
+</svg>
