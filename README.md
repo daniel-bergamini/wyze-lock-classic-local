@@ -97,7 +97,10 @@ PROTOCOL.md     # findings: UUIDs, encryption, command formats, as discovered
 5. ~~Implement `device.py` transport, validate against the real lock.~~
    **Done — WyzeLockClassic drives state read + lock/unlock over BLE, validated
    live both directions.**
-6. Only then build `custom_components/wyze_lock_classic_local/`.
+6. ~~Build `custom_components/wyze_lock_classic_local/`.~~ **Done (v0.1.0) —
+   config-flow HA integration for HAOS + Bluetooth proxy: fetches reusable BLE
+   tokens once from the Wyze cloud, then polls state and serves lock/unlock
+   over the proxy. Needs live testing in HA.**
 
 ## Disclaimer
 

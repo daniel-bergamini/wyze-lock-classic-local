@@ -1,0 +1,30 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Wyze Lock Classic (Local BLE)",
+        "description": "Enter your Wyze account details and a developer API key from https://developer-api-console.wyze.com/. Used once to fetch each lock's BLE key; control is Bluetooth-local afterward.",
+        "data": {
+          "email": "Email",
+          "password": "Password",
+          "key_id": "Developer key id",
+          "api_key": "Developer API key"
+        }
+      },
+      "2fa": {
+        "title": "Two-factor authentication",
+        "description": "Enter the verification code from your authenticator app or SMS.",
+        "data": {
+          "code": "Verification code"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not sign in to Wyze. Check your credentials and developer API key.",
+      "invalid_2fa": "That verification code was not accepted."
+    },
+    "abort": {
+      "already_configured": "This Wyze account is already set up."
+    }
+  }
+}
