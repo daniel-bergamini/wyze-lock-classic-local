@@ -41,6 +41,7 @@ import argparse
 import asyncio
 import json
 import sys
+import time
 from typing import Any, Dict, List, Optional
 
 try:
@@ -91,18 +92,26 @@ async def dump_device(address: str, do_read: bool, do_notify: bool) -> Dict[str,
             "range and advertising (try --scan first)."
         )
 
+    result: Dict[str, Any] = {
+        "address": device.address,
+        "name": device.name,
+        "services": [],
+        "notifications": [],
+    }
+
+    disconnected = asyncio.Event()
+    t0 = time.monotonic()
+
+    def _on_disconnect(_c: Any) -> None:
+        print("    ! lock dropped the connection")
+        disconnected.set()
+
     print(f"Connecting to {device.address} ({device.name!r})...")
     client: BleakClient = await establish_connection(
-        BleakClient, device, device.name or address
+        BleakClient, device, device.name or address, disconnected_callback=_on_disconnect
     )
 
     try:
-        result: Dict[str, Any] = {
-            "address": device.address,
-            "name": device.name,
-            "services": [],
-        }
-
         notify_started: List[str] = []
         for service in client.services:
             svc_entry: Dict[str, Any] = {
@@ -132,7 +141,11 @@ async def dump_device(address: str, do_read: bool, do_notify: bool) -> Dict[str,
                     # versions passed an int handle; we bind the uuid instead of
                     # reading it off arg 1, so either works.
                     def _on_notify(_sender: Any, data: bytearray, _uuid=char.uuid) -> None:
-                        print(f"    notify {_uuid}: {data.hex()}")
+                        hexval = data.hex()
+                        print(f"    notify {_uuid}: {hexval}")
+                        result["notifications"].append(
+                            {"uuid": _uuid, "t": round(time.monotonic() - t0, 3), "hex": hexval}
+                        )
 
                     try:
                         await client.start_notify(char.uuid, _on_notify)
@@ -145,15 +158,28 @@ async def dump_device(address: str, do_read: bool, do_notify: bool) -> Dict[str,
             result["services"].append(svc_entry)
 
         if notify_started:
+            listen_s = 30
             print(f"Listening for notifications on {len(notify_started)} "
-                  "characteristic(s) for 10s (Ctrl+C to stop early)...")
-            await asyncio.sleep(10)
+                  f"characteristic(s) for up to {listen_s}s (Ctrl+C to stop early)...")
+            try:
+                await asyncio.wait_for(disconnected.wait(), timeout=listen_s)
+            except asyncio.TimeoutError:
+                pass
             for uuid in notify_started:
-                await client.stop_notify(uuid)
+                if disconnected.is_set():
+                    break
+                try:
+                    await client.stop_notify(uuid)
+                except Exception as err:  # noqa: BLE001 - cleanup best-effort
+                    print(f"    stop_notify {uuid} failed: {type(err).__name__}: {err}")
 
+        result["disconnected_early"] = disconnected.is_set()
         return result
     finally:
-        await client.disconnect()
+        try:
+            await client.disconnect()
+        except Exception:  # noqa: BLE001 - already gone
+            pass
 
 
 def report(dump: Dict[str, Any]) -> None:
