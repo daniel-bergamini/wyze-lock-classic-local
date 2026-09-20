@@ -1,0 +1,20 @@
+# Dependencies for tools/key_probe.py -- the one-shot Wyze cloud probe, and the
+# only thing in this repo that touches the network. Nothing in src/ or
+# custom_components/ may depend on this file.
+#
+#   uv venv --python 3.13 tools/wyze-probe
+#   uv pip install --python tools/wyze-probe/bin/python -r tools/requirements.txt
+#   tools/wyze-probe/bin/python tools/key_probe.py
+#
+# Needs Python >= 3.11: wyzeapy 0.6.x requires it, and 0.6.x is where
+# Lock.ble_id / Lock.ble_token and BaseService._get_lock_ble_token live. 3.13 is
+# chosen to match what current Home Assistant runs on, so anything written here
+# is exercised on a realistic interpreter. The system Python on this box is
+# 3.10; `uv python install 3.13` provides a standalone build without touching
+# system packages.
+#
+# Pinned because key_probe.py reaches past the public API into wyzeapy
+# internals (BaseService._get_device_info, _get_lock_info, utils.wyze_decrypt_cbc)
+# and hand-rolls the /openapi/lock/v1/ble/token call -- all free to move between
+# releases. Matches ha-wyzeapi's own manifest pin of wyzeapy>=0.6.1,<0.7.
+wyzeapy==0.6.1

@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# wyze-lock-classic-local
+# local venv for tools/key_probe.py
+tools/wyze-probe/
+# cloud probe output: secrets-adjacent, never commit
+wyze_probe_dump*.json
