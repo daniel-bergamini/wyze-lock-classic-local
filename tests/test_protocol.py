@@ -86,15 +86,12 @@ def test_state_decode_locked_and_unlocked():
     assert unlocked.timestamp == 1789928099
 
 
-def test_build_command_structure_and_key():
+def test_build_hello_structure():
     uuid = "0123456789abcdef0123456789abcdef"
-    key = p.state_key(uuid)
-    for lock, action in ((False, b"1"), (True, b"2")):
-        ct = p.build_command(uuid, lock=lock)
-        assert len(ct) == 16
-        pt = AES.new(key, AES.MODE_ECB).decrypt(ct)
-        assert pt == action + b"0" * 10 + b"loock"
-    assert p.build_command(uuid, lock=True) != p.build_command(uuid, lock=False)
+    ct = p.build_hello(uuid)
+    assert len(ct) == 16
+    pt = AES.new(p.state_key(uuid), AES.MODE_ECB).decrypt(ct)
+    assert pt == b"1" + b"0" * 10 + b"loock"
 
 
 def test_challenge_request_is_wellformed():

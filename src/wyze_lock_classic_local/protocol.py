@@ -14,13 +14,20 @@ The **state/read** path is solved and validated: state characteristics are
 AES-ECB blocks keyed by the last 16 ASCII chars of the lock's cloud uuid,
 decrypting to ``status | ts | pad | "loock"`` (see decode_state).
 
-The **actuation** path is NOT solved. A 16-byte block written to ``00002250``
-(``build_command``) reproduces a captured app write, but a live test showed it
-does not move the bolt; it is likely a poll/hello, not lock/unlock. The Bolt's
-challenge-response (below) is rejected by this lock. See project notes.
+The **actuation** path is the challenge-response over the Nordic UART service
+(confirmed against a real app unlock that changed state on the wire):
 
-The L1/L2 framing helpers are the shared Yunding framing (confirmed against the
-cloud BLE-token ``buf``); the YD.LO1 paths above do not use them.
+1. Write the ``00002250`` hello block first (``build_hello`` — a session
+   prime, not actuation on its own).
+2. Send ``build_challenge_request()`` (seq 0) to the NUS write char.
+3. The lock replies with an L1 ACK then a ``0x86`` challenge; pull the nonce
+   with ``extract_challenge``.
+4. Send ``build_ack`` (echoing the challenge frame's seq) then
+   ``build_lock_unlock(ble_id, ble_token, challenge, lock)``.
+
+``ble_id``/``ble_token`` come from the cloud BLE-token endpoint (once, reusable;
+the nonce gives freshness). The answer is ``AES-ECB(ble_token[16:], nonce)``
+XOR a per-command magic — verified byte-for-byte against real traffic.
 """
 
 from __future__ import annotations
@@ -58,10 +65,12 @@ L2_CMD_CHALLENGE = 0x86       # lock -> client, carries the nonce
 L2_CMD_LOCK_UNLOCK = 0x04     # client -> lock, and the lock's result echo
 TAG_CHALLENGE = 0xD2          # nonce tag inside a 0x86 frame
 
-# Per-command magic constants XORed into the encrypted nonce. Tail is the ASCII
-# "loock" (Yunding's lock brand); the leading byte selects the action.
+# Per-command magic XORed into the encrypted nonce; tail is ASCII "loock".
+# UNLOCK (0x01) is confirmed against real traffic. LOCK is a PLACEHOLDER: the
+# 0x02 value (the Bolt's) was tested live and did NOT lock the YD.LO1, so the
+# real lock magic is still unknown (needs an app lock capture). See notes.
 _MAGIC_UNLOCK = bytes.fromhex("01000000000000000000006c6f6f636b")
-_MAGIC_LOCK = bytes.fromhex("02000000000000000000006c6f6f636b")
+_MAGIC_LOCK = bytes.fromhex("02000000000000000000006c6f6f636b")  # UNVERIFIED
 
 # State-characteristic status byte (characteristic 0x2220).
 STATE_LOCKED = 0x01
@@ -170,35 +179,23 @@ def decode_state(lock_uuid: str, ciphertext: bytes) -> LockState:
     )
 
 
-# Action digit at byte 0 of the command plaintext. Confirmed: '1' unlocks (seen
-# on the wire, left the lock unlocked). '2' = lock is the matching value by
-# analogy to the Bolt's raw 0x01/0x02 magics, not yet confirmed on hardware.
-COMMAND_UNLOCK = b"1"
-COMMAND_LOCK = b"2"
+def build_hello(lock_uuid: str) -> bytes:
+    """Build the 16-byte ``00002250`` session-prime block the app sends first.
 
-
-def build_command(lock_uuid: str, lock: bool) -> bytes:
-    """Build the 16-byte ``00002250`` block matching the app's captured write.
-
-    Plaintext is ``<action> + "0"*10 + "loock"`` encrypted AES-ECB under the
-    uuid-derived key. WARNING: despite the name, this is NOT confirmed to
-    actuate. A live test showed writing the ``"1"`` form does not move the bolt
-    (in either direction) and the ``"2"`` form is rejected — see project notes.
-    Kept because it reproduces the captured write byte-for-byte; treat it as a
-    poll/hello candidate, not a working lock/unlock, until proven otherwise.
+    Plaintext ``"1" + "0"*10 + "loock"`` encrypted AES-ECB under the uuid key.
+    This is a session hello, NOT actuation — written before the challenge-
+    response handshake. Sending it alone does nothing to the bolt.
     """
-    action = COMMAND_LOCK if lock else COMMAND_UNLOCK
-    plaintext = action + b"0" * 10 + b"loock"
-    return AES.new(state_key(lock_uuid), AES.MODE_ECB).encrypt(plaintext)
+    return AES.new(state_key(lock_uuid), AES.MODE_ECB).encrypt(b"1" + b"0" * 10 + b"loock")
 
 
-# --- Bolt (YD_BT1) challenge-response — NOT used by the YD.LO1 --------------
-# The YD.LO1 rejects this handshake (it drops the connection on the challenge
-# request); its actuation path is build_command() above. These are retained for
-# reference and for the shared framing only.
+# --- Challenge-response actuation (Nordic UART) -----------------------------
+# Confirmed as the YD.LO1 lock/unlock path against real traffic. The earlier
+# belief that the lock rejects this was a probe bug: the request must use seq 0
+# and follow the build_hello() prime.
 
-def build_challenge_request(seq: int = 1) -> bytes:
-    """L1 frame that asks the lock to issue a challenge nonce. Non-actuating."""
+def build_challenge_request(seq: int = 0) -> bytes:
+    """L1 frame asking the lock to issue a challenge nonce. seq 0 (see notes)."""
     return pack_l1(pack_l2(L2_CMD_REQUEST_CHALLENGE, {0x0A: b"\x27"}), seq=seq)
 
 
