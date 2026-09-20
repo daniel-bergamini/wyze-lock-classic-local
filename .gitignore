@@ -222,3 +222,8 @@ __marimo__/
 tools/wyze-probe/
 # cloud probe output: secrets-adjacent, never commit
 wyze_probe_dump*.json
+# local venv for scripts/gatt_dump.py
+scripts/.venv/
+# BLE recon output: contains the lock's real address + ciphertext, never
+# commit. All GATT dumps live here (see CLAUDE.md).
+captures/

@@ -1,0 +1,12 @@
+# Dependencies for scripts/gatt_dump.py -- read-only BLE recon, run by hand
+# near the physical lock. Separate from tools/requirements.txt (cloud-only,
+# never touches BLE) and from the eventual custom_components/ manifest.json
+# (proxy-compatible runtime deps for the real integration). Keeping these
+# three dependency sets apart is deliberate: a change here should never be
+# able to affect the cloud probe or vice versa.
+#
+#   python -m venv scripts/.venv
+#   scripts/.venv/bin/pip install -r scripts/requirements.txt
+#   scripts/.venv/bin/python scripts/gatt_dump.py --scan
+bleak
+bleak-retry-connector

@@ -55,11 +55,18 @@ try:
 except ImportError:  # pragma: no cover - environment problem, not a code path
     sys.exit(
         "wyzeapy is not importable, or is too old (need >= 0.6.1 for the BLE\n"
-        "token endpoint, which needs Python >= 3.11). Rebuild the probe venv:\n"
-        "  uv python install 3.13\n"
-        "  uv venv --python 3.13 tools/wyze-probe\n"
-        "  uv pip install --python tools/wyze-probe/bin/python -r tools/requirements.txt\n"
-        "  tools/wyze-probe/bin/python tools/key_probe.py"
+        "token endpoint, which needs Python >= 3.11).\n"
+        "\n"
+        "Run this with the probe venv's interpreter, not a bare `python`:\n"
+        "  tools/.venv/bin/python tools/key_probe.py\n"
+        "\n"
+        "This must run inside WSL/Linux. Windows python.exe cannot use the\n"
+        "venv even via a \\\\wsl.localhost\\... path -- it is a different\n"
+        "interpreter with its own site-packages.\n"
+        "\n"
+        "To rebuild the venv from scratch:\n"
+        "  uv venv --python 3.12 tools/.venv\n"
+        "  uv pip install --python tools/.venv/bin/python -r tools/requirements.txt"
     )
 
 DEFAULT_MODEL = "YD.LO1"
