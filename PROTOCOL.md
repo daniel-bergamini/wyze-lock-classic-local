@@ -5,8 +5,7 @@ Wyze Lock** (`product_model` `YD.LO1`), the ODM Yunding/"Loock" `XNLL901`.
 Everything here was reverse-engineered from live traffic and **validated
 against real hardware** — state decoding cross-checked against the cloud API to
 the second, and lock/unlock both driven end-to-end from an independent
-implementation (`src/wyze_lock_classic_local/`). The messy research trail lives
-in `CLAUDE.md`; this file is the confirmed result.
+implementation (`src/wyze_lock_classic_local/`). This file is the confirmed result.
 
 > Not the **Wyze Lock Bolt** (`YD_BT1`), which is a different, newer product.
 > The two share framing and some conventions but differ in the actuation path.

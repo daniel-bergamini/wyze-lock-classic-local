@@ -12,7 +12,24 @@ one-time cloud fetch for per-lock key material. The confirmed wire format is in
 [`src/wyze_lock_classic_local/`](src/wyze_lock_classic_local/), and a Home
 Assistant integration (HAOS + Bluetooth proxy) in
 [`custom_components/`](custom_components/) — the latter is written but not yet
-tested in a live HA. Deep research notes are in [`CLAUDE.md`](CLAUDE.md).
+tested in a live HA.
+
+## Installation (HACS)
+
+Not in the default HACS store — add it as a HACS **custom repository**:
+
+1. HACS → the **⋮** menu (top right) → **Custom repositories**.
+2. Add `https://github.com/daniel-bergamini/wyze-lock-classic-local`, category
+   **Integration**.
+3. Find "Wyze Lock Classic (Local BLE)" in HACS and install it.
+4. Restart Home Assistant.
+5. Settings → Devices & Services → **Add Integration** → "Wyze Lock Classic".
+   Enter your Wyze email/password and a developer API key from
+   <https://developer-api-console.wyze.com/> (used once to fetch each lock's BLE
+   key; control is Bluetooth-local afterward).
+
+Requires the built-in Bluetooth integration with an adapter or ESPHome
+Bluetooth Proxy in range of each lock.
 
 ## Why this exists
 

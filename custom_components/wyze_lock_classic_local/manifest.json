@@ -1,13 +1,19 @@
 {
   "domain": "wyze_lock_classic_local",
   "name": "Wyze Lock Classic (Local BLE)",
-  "codeowners": ["@daniel-bergamini"],
+  "codeowners": [
+    "@daniel-bergamini"
+  ],
   "config_flow": true,
-  "dependencies": ["bluetooth_adapters"],
+  "dependencies": [
+    "bluetooth"
+  ],
   "documentation": "https://github.com/daniel-bergamini/wyze-lock-classic-local",
   "integration_type": "hub",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/daniel-bergamini/wyze-lock-classic-local/issues",
-  "requirements": ["wyzeapy>=0.6.1,<0.7"],
+  "requirements": [
+    "wyzeapy>=0.6.1,<0.7"
+  ],
   "version": "0.1.0"
 }
