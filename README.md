@@ -67,7 +67,7 @@ offline key from the cloud and hands it to the `yalexs-ble` library.
 
 ```
 src/wyze_lock_classic_local/
-  protocol.py   pure codec: encode commands, decode notify payloads (no I/O)
+  protocol.py   pure codec: encode commands, decode notify payloads (no I/O) [exists]
   device.py     bleak + bleak-retry-connector transport (proxy-compatible)
   monitor.py    read-only CLI: scan, connect, dump GATT, print decoded state
 tools/
@@ -90,7 +90,10 @@ PROTOCOL.md     # findings: UUIDs, encryption, command formats, as discovered
    (jadx) for the lock BLE handling code, and/or cross-check against live
    traffic (nRF Connect) during app-driven lock/unlock. No longer needed for
    *key material*, only for the wire format.
-4. Implement `protocol.py` as a pure codec, unit-testable without hardware.
+4. ~~Implement `protocol.py` as a pure codec, unit-testable without hardware.~~
+   **Done — codec written and validated against real captured frames + state;
+   see [`CLAUDE.md`](CLAUDE.md). Lock/unlock command building is implemented but
+   not yet exercised against the lock.**
 5. Implement `device.py` transport, validate against the real lock with
    `monitor.py` before writing any HA-facing code.
 6. Only then build `custom_components/wyze_lock_classic_local/`.
