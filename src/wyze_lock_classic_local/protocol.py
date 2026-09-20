@@ -179,14 +179,17 @@ def decode_state(lock_uuid: str, ciphertext: bytes) -> LockState:
     )
 
 
-def build_hello(lock_uuid: str) -> bytes:
+def build_hello(lock_uuid: str, lock: bool = False) -> bytes:
     """Build the 16-byte ``00002250`` session-prime block the app sends first.
 
-    Plaintext ``"1" + "0"*10 + "loock"`` encrypted AES-ECB under the uuid key.
-    This is a session hello, NOT actuation — written before the challenge-
-    response handshake. Sending it alone does nothing to the bolt.
+    Plaintext ``<digit> + "0"*10 + "loock"`` (ASCII) encrypted AES-ECB under the
+    uuid key, written before the challenge-response handshake. For unlock the
+    captured digit is ASCII ``"1"``; the ``"2"`` (lock) form mirrors it but is
+    UNVERIFIED — the confirmed unlock used ``"1"`` here alongside the ``0x01``
+    challenge magic, so lock is hypothesised to pair ``"2"`` with ``0x02``.
     """
-    return AES.new(state_key(lock_uuid), AES.MODE_ECB).encrypt(b"1" + b"0" * 10 + b"loock")
+    digit = b"2" if lock else b"1"
+    return AES.new(state_key(lock_uuid), AES.MODE_ECB).encrypt(digit + b"0" * 10 + b"loock")
 
 
 # --- Challenge-response actuation (Nordic UART) -----------------------------

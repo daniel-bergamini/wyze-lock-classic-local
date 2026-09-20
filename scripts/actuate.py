@@ -100,8 +100,8 @@ async def run(address, uuid, ble_id, ble_token, lock, dump_path):
         print(f"BEFORE: {'LOCKED' if before.locked else 'UNLOCKED'} (0x{before.status_byte:02x})")
 
         await client.start_notify(p.NUS_NOTIFY_UUID, on_notify)
-        print("-> hello (00002250)")
-        await client.write_gatt_char(p.LOCK_CMD_UUID, p.build_hello(uuid), response=False)
+        print(f"-> hello (00002250, action={'lock' if lock else 'unlock'})")
+        await client.write_gatt_char(p.LOCK_CMD_UUID, p.build_hello(uuid, lock=lock), response=False)
         await asyncio.sleep(0.3)
         print("-> challenge request (seq 0)")
         await send(p.build_challenge_request(seq=0))
