@@ -227,3 +227,6 @@ scripts/.venv/
 # BLE recon output: contains the lock's real address + ciphertext, never
 # commit. All GATT dumps live here (see CLAUDE.md).
 captures/
+
+# local research log — not published
+CLAUDE.md
