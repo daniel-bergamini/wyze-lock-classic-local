@@ -10,19 +10,21 @@ The lock speaks a Yunding/"loock" house protocol over two layers:
 - **L2** command:  ``cmd | flags | [tag | len(2 BE) | value]…`` — a one-byte
   command, a flags byte, then TLV entries.
 
-Two independent crypto paths sit on top:
+Both the read and the actuate paths are plain AES-ECB keyed by the last 16
+ASCII chars of the lock's cloud uuid — no cloud token, no challenge-response:
 
-- **State/notify** characteristics are AES-ECB blocks keyed by the last 16
-  ASCII chars of the lock's cloud uuid. Reading state needs no cloud call.
-- **Lock/unlock** is a challenge-response: the lock issues a nonce, the client
-  returns ``AES-ECB(ble_token[16:], nonce)`` XORed with a per-command magic.
-  ``ble_token`` comes from the cloud once and is then reusable; freshness is
-  provided by the per-attempt nonce.
+- **State/notify** characteristics decrypt to ``status | ts | pad | "loock"``.
+- **Lock/unlock** is a single 16-byte block written to ``00002250``, the
+  plaintext being an action digit + ``"0"`` padding + ``"loock"`` (e.g.
+  ``b"10000000000loock"`` to unlock). Observed static on the wire (no nonce or
+  counter), so it is effectively a fixed per-lock command.
 
-Everything here was derived from live YD.LO1 traffic and validated against it
-(see the project notes). The protocol shape is shared with the Wyze Lock Bolt,
-whose open-source integration confirmed the field meanings; this is an
-independent implementation of that wire format.
+This was derived from live YD.LO1 traffic (an HCI capture of the Wyze app
+actuating the lock) and validated against it. The L1/L2 framing helpers below
+are the shared Yunding framing (confirmed against the cloud BLE-token ``buf``);
+the YD.LO1 *actuation* path does not use them — that is the Bolt's approach,
+which this lock rejects (see project notes). They are kept for parsing the
+cloud ``buf`` and any future enrollment work.
 """
 
 from __future__ import annotations
@@ -41,6 +43,8 @@ NUS_NOTIFY_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
 
 # "loock" house-protocol state service; …2220 is the authoritative lock state.
 LOCK_STATE_UUID = "00002220-0000-6b63-6f6c-2e6b636f6f6c"
+# …2250 is the write sink for the lock/unlock command (see build_command).
+LOCK_CMD_UUID = "00002250-0000-6b63-6f6c-2e6b636f6f6c"
 
 # --- L1 framing ------------------------------------------------------------
 L1_MAGIC = 0xAB
@@ -169,6 +173,29 @@ def decode_state(lock_uuid: str, ciphertext: bytes) -> LockState:
         timestamp=int.from_bytes(plain[1:5], "big"),
     )
 
+
+# Action digit at byte 0 of the command plaintext. Confirmed: '1' unlocks (seen
+# on the wire, left the lock unlocked). '2' = lock is the matching value by
+# analogy to the Bolt's raw 0x01/0x02 magics, not yet confirmed on hardware.
+COMMAND_UNLOCK = b"1"
+COMMAND_LOCK = b"2"
+
+
+def build_command(lock_uuid: str, lock: bool) -> bytes:
+    """Build the 16-byte block to write to ``LOCK_CMD_UUID`` to (un)lock.
+
+    Plaintext is ``<action> + "0"*10 + "loock"`` encrypted AES-ECB under the
+    same uuid-derived key as the state path. Warning: this ACTUATES the deadbolt.
+    """
+    action = COMMAND_LOCK if lock else COMMAND_UNLOCK
+    plaintext = action + b"0" * 10 + b"loock"
+    return AES.new(state_key(lock_uuid), AES.MODE_ECB).encrypt(plaintext)
+
+
+# --- Bolt (YD_BT1) challenge-response — NOT used by the YD.LO1 --------------
+# The YD.LO1 rejects this handshake (it drops the connection on the challenge
+# request); its actuation path is build_command() above. These are retained for
+# reference and for the shared framing only.
 
 def build_challenge_request(seq: int = 1) -> bytes:
     """L1 frame that asks the lock to issue a challenge nonce. Non-actuating."""

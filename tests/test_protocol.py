@@ -86,6 +86,17 @@ def test_state_decode_locked_and_unlocked():
     assert unlocked.timestamp == 1789928099
 
 
+def test_build_command_structure_and_key():
+    uuid = "0123456789abcdef0123456789abcdef"
+    key = p.state_key(uuid)
+    for lock, action in ((False, b"1"), (True, b"2")):
+        ct = p.build_command(uuid, lock=lock)
+        assert len(ct) == 16
+        pt = AES.new(key, AES.MODE_ECB).decrypt(ct)
+        assert pt == action + b"0" * 10 + b"loock"
+    assert p.build_command(uuid, lock=True) != p.build_command(uuid, lock=False)
+
+
 def test_challenge_request_is_wellformed():
     frame = p.build_challenge_request()
     parsed = p.parse_l1(frame)
