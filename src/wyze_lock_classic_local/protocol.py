@@ -10,21 +10,17 @@ The lock speaks a Yunding/"loock" house protocol over two layers:
 - **L2** command:  ``cmd | flags | [tag | len(2 BE) | value]…`` — a one-byte
   command, a flags byte, then TLV entries.
 
-Both the read and the actuate paths are plain AES-ECB keyed by the last 16
-ASCII chars of the lock's cloud uuid — no cloud token, no challenge-response:
+The **state/read** path is solved and validated: state characteristics are
+AES-ECB blocks keyed by the last 16 ASCII chars of the lock's cloud uuid,
+decrypting to ``status | ts | pad | "loock"`` (see decode_state).
 
-- **State/notify** characteristics decrypt to ``status | ts | pad | "loock"``.
-- **Lock/unlock** is a single 16-byte block written to ``00002250``, the
-  plaintext being an action digit + ``"0"`` padding + ``"loock"`` (e.g.
-  ``b"10000000000loock"`` to unlock). Observed static on the wire (no nonce or
-  counter), so it is effectively a fixed per-lock command.
+The **actuation** path is NOT solved. A 16-byte block written to ``00002250``
+(``build_command``) reproduces a captured app write, but a live test showed it
+does not move the bolt; it is likely a poll/hello, not lock/unlock. The Bolt's
+challenge-response (below) is rejected by this lock. See project notes.
 
-This was derived from live YD.LO1 traffic (an HCI capture of the Wyze app
-actuating the lock) and validated against it. The L1/L2 framing helpers below
-are the shared Yunding framing (confirmed against the cloud BLE-token ``buf``);
-the YD.LO1 *actuation* path does not use them — that is the Bolt's approach,
-which this lock rejects (see project notes). They are kept for parsing the
-cloud ``buf`` and any future enrollment work.
+The L1/L2 framing helpers are the shared Yunding framing (confirmed against the
+cloud BLE-token ``buf``); the YD.LO1 paths above do not use them.
 """
 
 from __future__ import annotations
@@ -182,10 +178,14 @@ COMMAND_LOCK = b"2"
 
 
 def build_command(lock_uuid: str, lock: bool) -> bytes:
-    """Build the 16-byte block to write to ``LOCK_CMD_UUID`` to (un)lock.
+    """Build the 16-byte ``00002250`` block matching the app's captured write.
 
     Plaintext is ``<action> + "0"*10 + "loock"`` encrypted AES-ECB under the
-    same uuid-derived key as the state path. Warning: this ACTUATES the deadbolt.
+    uuid-derived key. WARNING: despite the name, this is NOT confirmed to
+    actuate. A live test showed writing the ``"1"`` form does not move the bolt
+    (in either direction) and the ``"2"`` form is rejected — see project notes.
+    Kept because it reproduces the captured write byte-for-byte; treat it as a
+    poll/hello candidate, not a working lock/unlock, until proven otherwise.
     """
     action = COMMAND_LOCK if lock else COMMAND_UNLOCK
     plaintext = action + b"0" * 10 + b"loock"
