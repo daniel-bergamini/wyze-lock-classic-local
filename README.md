@@ -112,8 +112,7 @@ PROTOCOL.md     # findings: UUIDs, encryption, command formats, as discovered
    *key material*, only for the wire format.
 4. ~~Implement `protocol.py` as a pure codec, unit-testable without hardware.~~
    **Done — codec written and validated against real captured frames + state;
-   see [`CLAUDE.md`](CLAUDE.md). Lock/unlock command building is implemented but
-   not yet exercised against the lock.**
+   see [`PROTOCOL.md`](PROTOCOL.md). Lock/unlock confirmed live both directions.**
 5. ~~Implement `device.py` transport, validate against the real lock.~~
    **Done — WyzeLockClassic drives state read + lock/unlock over BLE, validated
    live both directions.**
