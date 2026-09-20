@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import voluptuous as vol
+from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 
 from .cloud import authenticate
@@ -32,6 +33,24 @@ class WyzeLockClassicConfigFlow(ConfigFlow, domain=DOMAIN):
 
     def __init__(self) -> None:
         self._creds: dict[str, str] = {}
+
+    async def async_step_bluetooth(
+        self, discovery_info: BluetoothServiceInfoBleak
+    ) -> ConfigFlowResult:
+        """A Wyze Lock advertised nearby — prompt to set up the account.
+
+        One config entry (the Wyze account) manages every lock, so if we are
+        already configured there is nothing to add. Otherwise fall through to
+        the credentials step; setup then pulls in all locks, including this one.
+        We key the discovery flow on the domain so multiple advertising locks
+        raise a single setup prompt, not one per lock.
+        """
+        if self._async_current_entries():
+            return self.async_abort(reason="already_configured")
+        await self.async_set_unique_id(DOMAIN)
+        self._abort_if_unique_id_configured()
+        self.context["title_placeholders"] = {"name": discovery_info.name or "Wyze Lock"}
+        return await self.async_step_user()
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}

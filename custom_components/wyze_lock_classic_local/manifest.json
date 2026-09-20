@@ -1,6 +1,12 @@
 {
   "domain": "wyze_lock_classic_local",
   "name": "Wyze Lock Classic (Local BLE)",
+  "bluetooth": [
+    {
+      "local_name": "Wyze Lock*",
+      "connectable": true
+    }
+  ],
   "codeowners": [
     "@daniel-bergamini"
   ],
@@ -15,5 +21,5 @@
   "requirements": [
     "wyzeapy>=0.6.1,<0.7"
   ],
-  "version": "0.1.0"
+  "version": "0.2.0"
 }
