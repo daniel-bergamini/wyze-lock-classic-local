@@ -5,11 +5,14 @@ Bluetooth Low Energy. No cloud dependency for the HA-facing control path.
 
 ## Status
 
-**Pre-alpha / protocol research.** Nothing here controls a lock yet. This repo
-currently exists to hold notes as the BLE protocol gets reverse engineered.
-Key extraction from the cloud is solved; the BLE wire format is not. Running
-notes live in [`CLAUDE.md`](CLAUDE.md); `PROTOCOL.md` gets written only once
-the wire format is confirmed against real hardware.
+**Working.** The BLE protocol is fully reverse-engineered and hardware-
+validated: reading lock state and locking/unlocking both work over BLE, with a
+one-time cloud fetch for per-lock key material. The confirmed wire format is in
+[`PROTOCOL.md`](PROTOCOL.md); a pure codec + transport live in
+[`src/wyze_lock_classic_local/`](src/wyze_lock_classic_local/), and a Home
+Assistant integration (HAOS + Bluetooth proxy) in
+[`custom_components/`](custom_components/) — the latter is written but not yet
+tested in a live HA. Deep research notes are in [`CLAUDE.md`](CLAUDE.md).
 
 ## Why this exists
 
