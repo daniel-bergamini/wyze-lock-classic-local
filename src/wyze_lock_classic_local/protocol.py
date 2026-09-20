@@ -66,11 +66,11 @@ L2_CMD_LOCK_UNLOCK = 0x04     # client -> lock, and the lock's result echo
 TAG_CHALLENGE = 0xD2          # nonce tag inside a 0x86 frame
 
 # Per-command magic XORed into the encrypted nonce; tail is ASCII "loock".
-# UNLOCK (0x01) is confirmed against real traffic. LOCK is a PLACEHOLDER: the
-# 0x02 value (the Bolt's) was tested live and did NOT lock the YD.LO1, so the
-# real lock magic is still unknown (needs an app lock capture). See notes.
+# Both CONFIRMED against real app traffic: build_lock_unlock reproduces the
+# app's lock (0x02) and unlock (0x01) frames byte-for-byte, and the lock's
+# state characteristic changed accordingly on the wire.
 _MAGIC_UNLOCK = bytes.fromhex("01000000000000000000006c6f6f636b")
-_MAGIC_LOCK = bytes.fromhex("02000000000000000000006c6f6f636b")  # UNVERIFIED
+_MAGIC_LOCK = bytes.fromhex("02000000000000000000006c6f6f636b")
 
 # State-characteristic status byte (characteristic 0x2220).
 STATE_LOCKED = 0x01
@@ -179,17 +179,15 @@ def decode_state(lock_uuid: str, ciphertext: bytes) -> LockState:
     )
 
 
-def build_hello(lock_uuid: str, lock: bool = False) -> bytes:
+def build_hello(lock_uuid: str) -> bytes:
     """Build the 16-byte ``00002250`` session-prime block the app sends first.
 
-    Plaintext ``<digit> + "0"*10 + "loock"`` (ASCII) encrypted AES-ECB under the
-    uuid key, written before the challenge-response handshake. For unlock the
-    captured digit is ASCII ``"1"``; the ``"2"`` (lock) form mirrors it but is
-    UNVERIFIED — the confirmed unlock used ``"1"`` here alongside the ``0x01``
-    challenge magic, so lock is hypothesised to pair ``"2"`` with ``0x02``.
+    Plaintext ``"1" + "0"*10 + "loock"`` encrypted AES-ECB under the uuid key,
+    written before the challenge-response handshake. Confirmed constant: the app
+    sends this same ``"1"`` block for BOTH lock and unlock — the action lives in
+    the challenge magic, not here. Sending it alone does not actuate.
     """
-    digit = b"2" if lock else b"1"
-    return AES.new(state_key(lock_uuid), AES.MODE_ECB).encrypt(digit + b"0" * 10 + b"loock")
+    return AES.new(state_key(lock_uuid), AES.MODE_ECB).encrypt(b"1" + b"0" * 10 + b"loock")
 
 
 # --- Challenge-response actuation (Nordic UART) -----------------------------

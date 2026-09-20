@@ -62,7 +62,8 @@ async def run(address, uuid, ble_id, ble_token, lock, dump_path):
 
     rx = bytearray()
     done = asyncio.Event()
-    result = {"stage": "init", "sent_answer": False}
+    state_changed = asyncio.Event()
+    result = {"stage": "init", "sent_answer": False, "new_state": None}
 
     async def send(frame):
         await client.write_gatt_char(p.NUS_WRITE_UUID, frame, response=False)
@@ -95,15 +96,25 @@ async def run(address, uuid, ble_id, ble_token, lock, dump_path):
                 print("    <- lock/unlock RESULT received")
                 done.set()
 
+    def on_state(_s, data):
+        try:
+            st = p.decode_state(uuid, bytes(data))
+        except Exception:  # noqa: BLE001
+            return
+        result["new_state"] = st
+        print(f"    <- state notify: {'LOCKED' if st.locked else 'UNLOCKED'} (0x{st.status_byte:02x})")
+        state_changed.set()
+
     try:
         before = await read_state(client, uuid)
         print(f"BEFORE: {'LOCKED' if before.locked else 'UNLOCKED'} (0x{before.status_byte:02x})")
 
+        await client.start_notify(p.LOCK_STATE_UUID, on_state)
         await client.start_notify(p.NUS_NOTIFY_UUID, on_notify)
-        print(f"-> hello (00002250, action={'lock' if lock else 'unlock'})")
-        await client.write_gatt_char(p.LOCK_CMD_UUID, p.build_hello(uuid, lock=lock), response=False)
+        print("-> hello (00002250)")
+        await client.write_gatt_char(p.LOCK_CMD_UUID, p.build_hello(uuid), response=False)
         await asyncio.sleep(0.3)
-        print("-> challenge request (seq 0)")
+        print(f"-> {'LOCK' if lock else 'UNLOCK'} via challenge request (seq 0)")
         await send(p.build_challenge_request(seq=0))
 
         try:
@@ -111,8 +122,14 @@ async def run(address, uuid, ble_id, ble_token, lock, dump_path):
         except asyncio.TimeoutError:
             print("    (no result frame within 10s)")
 
-        await asyncio.sleep(1.5)
-        after = await read_state(client, uuid)
+        # The bolt moves after the result; the new state arrives as a
+        # notification on 00002220 a moment later. Wait for it (or fall back
+        # to a fresh read) rather than reading too early.
+        try:
+            await asyncio.wait_for(state_changed.wait(), timeout=6)
+        except asyncio.TimeoutError:
+            pass
+        after = result["new_state"] or await read_state(client, uuid)
         print(f"AFTER:  {'LOCKED' if after.locked else 'UNLOCKED'} (0x{after.status_byte:02x})")
         if after.status_byte != before.status_byte:
             print(f"\nActuated: 0x{before.status_byte:02x} -> 0x{after.status_byte:02x}.")
