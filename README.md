@@ -5,14 +5,14 @@ Bluetooth Low Energy. No cloud dependency for the HA-facing control path.
 
 ## Status
 
-**Working.** The BLE protocol is fully reverse-engineered and hardware-
-validated: reading lock state and locking/unlocking both work over BLE, with a
-one-time cloud fetch for per-lock key material. The confirmed wire format is in
-[`PROTOCOL.md`](PROTOCOL.md); a pure codec + transport live in
-[`src/wyze_lock_classic_local/`](src/wyze_lock_classic_local/), and a Home
-Assistant integration (HAOS + Bluetooth proxy) in
-[`custom_components/`](custom_components/) — the latter is written but not yet
-tested in a live HA.
+**Working in Home Assistant.** The BLE protocol is fully reverse-engineered and
+hardware-validated, and the integration runs live on HAOS over an ESPHome
+Bluetooth proxy: lock/unlock, lock-state, and battery level, with a one-time
+cloud fetch for per-lock key material (reusable — no cloud round trip at control
+time). The confirmed wire format is in [`PROTOCOL.md`](PROTOCOL.md); the pure
+codec + transport are in
+[`src/wyze_lock_classic_local/`](src/wyze_lock_classic_local/), and the Home
+Assistant integration in [`custom_components/`](custom_components/).
 
 ## Installation (HACS)
 

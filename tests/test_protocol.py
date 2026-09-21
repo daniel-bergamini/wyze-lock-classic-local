@@ -94,6 +94,13 @@ def test_build_hello_structure():
     assert pt == b"1" + b"0" * 10 + b"loock"
 
 
+def test_decode_battery():
+    uuid = "0123456789abcdef0123456789abcdef"
+    plain = bytes([100]) + (1789932325).to_bytes(4, "big") + b"\x00" * 6 + b"loock"
+    ct = AES.new(p.state_key(uuid), AES.MODE_ECB).encrypt(plain)
+    assert p.decode_battery(uuid, ct) == 100
+
+
 def test_challenge_request_is_wellformed():
     frame = p.build_challenge_request()
     parsed = p.parse_l1(frame)

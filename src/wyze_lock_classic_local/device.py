@@ -114,6 +114,28 @@ class WyzeLockClassic:
 
         return await self._with_client(device, address, _read)
 
+    async def async_read_status(
+        self,
+        *,
+        device: Optional[BLEDevice] = None,
+        address: Optional[str] = None,
+    ) -> "tuple[p.LockState, Optional[int]]":
+        """Read lock state and battery in a single connection.
+
+        Battery is best-effort: if that read fails, state is still returned with
+        battery None (a failed state read still raises and retries).
+        """
+        async def _read(client: BleakClient) -> "tuple[p.LockState, Optional[int]]":
+            state = p.decode_state(self._uuid, await client.read_gatt_char(p.LOCK_STATE_UUID))
+            battery: Optional[int] = None
+            try:
+                battery = p.decode_battery(self._uuid, await client.read_gatt_char(p.BATTERY_UUID))
+            except (BleakError, TimeoutError):
+                pass
+            return state, battery
+
+        return await self._with_client(device, address, _read)
+
     async def async_set(
         self,
         lock: bool,

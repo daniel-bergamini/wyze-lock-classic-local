@@ -7,7 +7,7 @@ from datetime import timedelta
 from homeassistant.const import Platform
 
 DOMAIN = "wyze_lock_classic_local"
-PLATFORMS = [Platform.LOCK]
+PLATFORMS = [Platform.LOCK, Platform.SENSOR]
 
 CONF_EMAIL = "email"
 CONF_PASSWORD = "password"

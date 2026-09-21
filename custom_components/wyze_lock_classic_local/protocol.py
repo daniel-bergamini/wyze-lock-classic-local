@@ -48,6 +48,9 @@ NUS_NOTIFY_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
 LOCK_STATE_UUID = "00002220-0000-6b63-6f6c-2e6b636f6f6c"
 # …2250 is the write sink for the lock/unlock command (see build_command).
 LOCK_CMD_UUID = "00002250-0000-6b63-6f6c-2e6b636f6f6c"
+# Standard Battery Level characteristic, but the value is AES-ECB encrypted
+# (uuid key) like the lock state, not a plain 0-100 byte.
+BATTERY_UUID = "00002a19-0000-1000-8000-00805f9b34fb"
 
 # --- L1 framing ------------------------------------------------------------
 L1_MAGIC = 0xAB
@@ -177,6 +180,16 @@ def decode_state(lock_uuid: str, ciphertext: bytes) -> LockState:
         status_byte=status,
         timestamp=int.from_bytes(plain[1:5], "big"),
     )
+
+
+def decode_battery(lock_uuid: str, ciphertext: bytes) -> int:
+    """Decrypt the battery characteristic (0x2a19) and return the percent.
+
+    Same AES-ECB(uuid key) scheme as the state path; byte 0 of the plaintext is
+    the battery level (0-100), followed by a timestamp and the "loock" marker.
+    """
+    plain = AES.new(state_key(lock_uuid), AES.MODE_ECB).decrypt(ciphertext)
+    return plain[0]
 
 
 def build_hello(lock_uuid: str) -> bytes:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
 from homeassistant.components import bluetooth
 from homeassistant.core import HomeAssistant
@@ -11,13 +12,20 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from .cloud import LockCredentials
 from .const import DOMAIN, UPDATE_INTERVAL
 from .device import WyzeLockClassic, WyzeLockError
-from .protocol import LockState
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class WyzeLockCoordinator(DataUpdateCoordinator[LockState]):
-    """Polls lock state and serves lock/unlock, all over the BT proxy."""
+@dataclass
+class LockData:
+    """Everything the entities need from one poll."""
+
+    locked: bool
+    battery: int | None
+
+
+class WyzeLockCoordinator(DataUpdateCoordinator[LockData]):
+    """Polls lock state + battery and serves lock/unlock, all over the BT proxy."""
 
     def __init__(self, hass: HomeAssistant, creds: LockCredentials) -> None:
         super().__init__(
@@ -40,11 +48,12 @@ class WyzeLockCoordinator(DataUpdateCoordinator[LockState]):
             )
         return device
 
-    async def _async_update_data(self) -> LockState:
+    async def _async_update_data(self) -> LockData:
         try:
-            return await self._lock.async_get_state(device=self._ble_device())
+            state, battery = await self._lock.async_read_status(device=self._ble_device())
         except WyzeLockError as err:
             raise UpdateFailed(str(err)) from err
+        return LockData(locked=state.locked, battery=battery)
 
     async def async_set(self, lock: bool) -> None:
         """Lock/unlock, then push the confirmed new state to entities."""
@@ -52,4 +61,5 @@ class WyzeLockCoordinator(DataUpdateCoordinator[LockState]):
             state = await self._lock.async_set(lock, device=self._ble_device())
         except WyzeLockError as err:
             raise UpdateFailed(str(err)) from err
-        self.async_set_updated_data(state)
+        battery = self.data.battery if self.data else None
+        self.async_set_updated_data(LockData(locked=state.locked, battery=battery))
