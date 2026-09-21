@@ -1,13 +1,14 @@
 """Wyze Lock Classic (Local BLE) — setup.
 
-At setup we do one cloud round trip to fetch each YD.LO1 lock's reusable BLE
-credentials, then everything is BLE-local: a per-lock coordinator polls state
-and serves lock/unlock over the Bluetooth proxy.
+Each YD.LO1 lock is controlled entirely over BLE at runtime; the only cloud use
+is fetching per-lock BLE credentials (a reusable token/id). Those are cached in
+the config entry, so:
 
-The fetched BLE tokens are long-lived and reusable, so we cache the last-good
-set per lock in the config entry. If a later startup can't reach the Wyze cloud,
-we fall back to the cache and keep working fully offline; a successful fetch
-refreshes it (healing a rotated token).
+- With a cache present, we come up **immediately** on the cached keys and refresh
+  from the cloud in the **background** (self-healing a rotated token without ever
+  blocking startup on the cloud).
+- With no cache (first setup), we must fetch synchronously; that's the only time
+  a cloud outage can block setup.
 """
 
 from __future__ import annotations
@@ -37,43 +38,45 @@ def _cached_locks(entry: ConfigEntry) -> list[LockCredentials]:
     return [LockCredentials(**{k: v for k, v in item.items() if k in known}) for item in raw]
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+def _store_cache(hass: HomeAssistant, entry: ConfigEntry, locks: list[LockCredentials]) -> None:
+    hass.config_entries.async_update_entry(
+        entry, data={**entry.data, _CACHE_KEY: [asdict(lock) for lock in locks]}
+    )
+
+
+def _fetch(hass: HomeAssistant, entry: ConfigEntry):
     data = entry.data
-    try:
-        # wyzeapy does blocking SSL/cert work; keep it off the event loop.
-        locks = await hass.async_add_executor_job(
-            functools.partial(
-                fetch_locks_blocking,
-                data[CONF_EMAIL],
-                data[CONF_PASSWORD],
-                data[CONF_KEY_ID],
-                data[CONF_API_KEY],
-            )
+    return hass.async_add_executor_job(
+        functools.partial(
+            fetch_locks_blocking,
+            data[CONF_EMAIL],
+            data[CONF_PASSWORD],
+            data[CONF_KEY_ID],
+            data[CONF_API_KEY],
         )
-    except Exception as err:  # noqa: BLE001
-        # Cloud unreachable (or bad creds): fall back to the cached BLE tokens if
-        # we have them, so control keeps working entirely offline.
-        cached = _cached_locks(entry)
-        if cached:
-            _LOGGER.warning(
-                "Wyze cloud fetch failed (%s); using cached BLE keys for %d lock(s)",
-                err,
-                len(cached),
-            )
-            locks = cached
-        else:
-            # Nothing cached to fall back on — surface the problem.
+    )
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    cached = _cached_locks(entry)
+
+    if cached:
+        # Fast path: come up on cached keys now, refresh in the background.
+        locks = cached
+        refresh_in_background = True
+    else:
+        # First setup: we have nothing cached, so the cloud fetch must succeed.
+        try:
+            locks = await _fetch(hass, entry)
+        except Exception as err:  # noqa: BLE001
             msg = str(err).lower()
             if any(t in msg for t in ("login", "auth", "password", "2fa")):
                 raise ConfigEntryAuthFailed(str(err)) from err
             raise ConfigEntryNotReady(f"Wyze cloud bootstrap failed: {err}") from err
-    else:
         if not locks:
             raise ConfigEntryNotReady("No YD.LO1 locks found on this Wyze account.")
-        # Refresh the cache with the freshly fetched tokens.
-        hass.config_entries.async_update_entry(
-            entry, data={**data, _CACHE_KEY: [asdict(lock) for lock in locks]}
-        )
+        _store_cache(hass, entry, locks)
+        refresh_in_background = False
 
     coordinators: list[WyzeLockCoordinator] = []
     for creds in locks:
@@ -85,7 +88,40 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinators
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    if refresh_in_background:
+        entry.async_create_background_task(
+            hass, _refresh_tokens(hass, entry, coordinators), f"{DOMAIN}_token_refresh"
+        )
     return True
+
+
+async def _refresh_tokens(
+    hass: HomeAssistant, entry: ConfigEntry, coordinators: list[WyzeLockCoordinator]
+) -> None:
+    """Refresh cloud tokens after a cached-key startup; update anything that
+    changed. Best-effort — a cloud failure just leaves the cache in place."""
+    try:
+        fresh = await _fetch(hass, entry)
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("Background token refresh failed; keeping cached keys: %s", err)
+        return
+    if not fresh:
+        return
+
+    _store_cache(hass, entry, fresh)
+    by_uuid = {c.creds.uuid: c for c in coordinators}
+    for creds in fresh:
+        coord = by_uuid.get(creds.uuid)
+        if coord is None:
+            _LOGGER.info(
+                "New Wyze lock '%s' on the account; reload the integration to add it",
+                creds.nickname,
+            )
+            continue
+        if (creds.ble_id, creds.ble_token) != (coord.creds.ble_id, coord.creds.ble_token):
+            _LOGGER.info("Refreshed BLE token for '%s'", creds.nickname)
+            coord.update_credentials(creds)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

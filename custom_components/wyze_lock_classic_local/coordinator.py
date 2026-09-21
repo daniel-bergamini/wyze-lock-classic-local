@@ -37,6 +37,11 @@ class WyzeLockCoordinator(DataUpdateCoordinator[LockData]):
         self.creds = creds
         self._lock = WyzeLockClassic(creds.uuid, creds.ble_id, creds.ble_token)
 
+    def update_credentials(self, creds: LockCredentials) -> None:
+        """Swap in refreshed cloud credentials (e.g. a rotated BLE token)."""
+        self.creds = creds
+        self._lock = WyzeLockClassic(creds.uuid, creds.ble_id, creds.ble_token)
+
     def _ble_device(self) -> bluetooth.BLEDevice:
         device = bluetooth.async_ble_device_from_address(
             self.hass, self.creds.address, connectable=True
