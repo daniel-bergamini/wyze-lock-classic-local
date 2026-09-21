@@ -33,6 +33,9 @@ class WyzeLockEntity(CoordinatorEntity[WyzeLockCoordinator], LockEntity):
             name=creds.nickname,
             manufacturer="Wyze / Yunding",
             model="YD.LO1",
+            sw_version=creds.sw_version,
+            hw_version=creds.hw_version,
+            serial_number=creds.serial,
             connections={(CONNECTION_BLUETOOTH, creds.address)},
         )
 

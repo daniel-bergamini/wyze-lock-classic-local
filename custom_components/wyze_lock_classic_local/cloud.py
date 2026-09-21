@@ -35,6 +35,9 @@ class LockCredentials:
     ble_id: int
     ble_token: str
     nickname: str
+    sw_version: Optional[str] = None
+    hw_version: Optional[str] = None
+    serial: Optional[str] = None
 
 
 def _mac_to_address(cloud_mac: str) -> str:
@@ -96,7 +99,8 @@ async def _fetch_locks(client: Wyzeapy) -> List[LockCredentials]:
         uuid = device.mac.split(".")[-1]
 
         info = await service._get_lock_info(device)
-        cloud_mac = info["device"]["hardware_info"]["mac"]
+        hardware = info["device"]["hardware_info"]
+        versions = hardware.get("versions", {})
 
         await service._auth_lib.refresh_if_should()
         payload = ford_create_payload(
@@ -109,10 +113,13 @@ async def _fetch_locks(client: Wyzeapy) -> List[LockCredentials]:
         creds.append(
             LockCredentials(
                 uuid=uuid,
-                address=_mac_to_address(cloud_mac),
+                address=_mac_to_address(hardware["mac"]),
                 ble_id=token["id"],
                 ble_token=ble_token,
                 nickname=getattr(device, "nickname", uuid),
+                sw_version=versions.get("ble_version") or versions.get("app_version"),
+                hw_version=versions.get("hardware_version"),
+                serial=hardware.get("sn"),
             )
         )
     return creds
