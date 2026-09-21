@@ -2,24 +2,39 @@
 
 At setup we do one cloud round trip to fetch each YD.LO1 lock's reusable BLE
 credentials, then everything is BLE-local: a per-lock coordinator polls state
-and serves lock/unlock over the Bluetooth proxy. Re-fetching each startup means
-a rotated cloud token heals on restart.
+and serves lock/unlock over the Bluetooth proxy.
+
+The fetched BLE tokens are long-lived and reusable, so we cache the last-good
+set per lock in the config entry. If a later startup can't reach the Wyze cloud,
+we fall back to the cache and keep working fully offline; a successful fetch
+refreshes it (healing a rotated token).
 """
 
 from __future__ import annotations
 
 import functools
 import logging
+from dataclasses import asdict, fields
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 
-from .cloud import fetch_locks_blocking
+from .cloud import LockCredentials, fetch_locks_blocking
 from .const import CONF_API_KEY, CONF_EMAIL, CONF_KEY_ID, CONF_PASSWORD, DOMAIN, PLATFORMS
 from .coordinator import WyzeLockCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+# Key under entry.data holding the cached per-lock BLE credentials.
+_CACHE_KEY = "cached_locks"
+
+
+def _cached_locks(entry: ConfigEntry) -> list[LockCredentials]:
+    """Rebuild cached LockCredentials, tolerating schema drift across versions."""
+    raw = entry.data.get(_CACHE_KEY) or []
+    known = {f.name for f in fields(LockCredentials)}
+    return [LockCredentials(**{k: v for k, v in item.items() if k in known}) for item in raw]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -36,16 +51,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
         )
     except Exception as err:  # noqa: BLE001
-        # Credentials issues should trigger reauth; transient cloud failures
-        # should retry. We cannot always tell them apart from wyzeapy, so treat
-        # login-shaped errors as auth failures.
-        msg = str(err).lower()
-        if "login" in msg or "auth" in msg or "password" in msg or "2fa" in msg:
-            raise ConfigEntryAuthFailed(str(err)) from err
-        raise ConfigEntryNotReady(f"Wyze cloud bootstrap failed: {err}") from err
-
-    if not locks:
-        raise ConfigEntryNotReady("No YD.LO1 locks found on this Wyze account.")
+        # Cloud unreachable (or bad creds): fall back to the cached BLE tokens if
+        # we have them, so control keeps working entirely offline.
+        cached = _cached_locks(entry)
+        if cached:
+            _LOGGER.warning(
+                "Wyze cloud fetch failed (%s); using cached BLE keys for %d lock(s)",
+                err,
+                len(cached),
+            )
+            locks = cached
+        else:
+            # Nothing cached to fall back on — surface the problem.
+            msg = str(err).lower()
+            if any(t in msg for t in ("login", "auth", "password", "2fa")):
+                raise ConfigEntryAuthFailed(str(err)) from err
+            raise ConfigEntryNotReady(f"Wyze cloud bootstrap failed: {err}") from err
+    else:
+        if not locks:
+            raise ConfigEntryNotReady("No YD.LO1 locks found on this Wyze account.")
+        # Refresh the cache with the freshly fetched tokens.
+        hass.config_entries.async_update_entry(
+            entry, data={**data, _CACHE_KEY: [asdict(lock) for lock in locks]}
+        )
 
     coordinators: list[WyzeLockCoordinator] = []
     for creds in locks:
