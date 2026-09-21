@@ -5,7 +5,7 @@ from __future__ import annotations
 from homeassistant.components.lock import LockEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_info import DeviceInfo
+from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -33,7 +33,7 @@ class WyzeLockEntity(CoordinatorEntity[WyzeLockCoordinator], LockEntity):
             name=creds.nickname,
             manufacturer="Wyze / Yunding",
             model="YD.LO1",
-            connections={("bluetooth", creds.address)},
+            connections={(CONNECTION_BLUETOOTH, creds.address)},
         )
 
     @property
