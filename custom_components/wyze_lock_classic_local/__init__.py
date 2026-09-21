@@ -43,7 +43,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinators: list[WyzeLockCoordinator] = []
     for creds in locks:
         coordinator = WyzeLockCoordinator(hass, creds)
-        await coordinator.async_config_entry_first_refresh()
+        # Don't block setup (or fail it) if one lock is out of BLE range — do a
+        # non-raising first poll; unreachable locks come online on a later poll.
+        await coordinator.async_refresh()
         coordinators.append(coordinator)
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinators

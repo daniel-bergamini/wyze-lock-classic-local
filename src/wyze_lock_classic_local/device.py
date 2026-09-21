@@ -26,10 +26,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Optional, Union
+from typing import Awaitable, Callable, Optional, TypeVar
 
 from bleak import BleakClient, BleakScanner
 from bleak.backends.device import BLEDevice
+from bleak.exc import BleakError
 from bleak_retry_connector import establish_connection
 
 from . import protocol as p
@@ -39,6 +40,13 @@ _LOGGER = logging.getLogger(__name__)
 # How long to wait for the handshake result and the follow-up state change.
 _RESULT_TIMEOUT = 10.0
 _STATE_TIMEOUT = 6.0
+
+# Transient BLE failures (notably ESP-proxy "error 133") are common; retry the
+# whole connect+operation with a fresh connection and a little backoff.
+_ATTEMPTS = 4
+_BACKOFF = 0.6
+
+_T = TypeVar("_T")
 
 
 class WyzeLockError(Exception):
@@ -66,6 +74,33 @@ class WyzeLockClassic:
     async def _connect(self, device: BLEDevice) -> BleakClient:
         return await establish_connection(BleakClient, device, device.name or str(device.address))
 
+    async def _with_client(
+        self,
+        device: Optional[BLEDevice],
+        address: Optional[str],
+        work: Callable[[BleakClient], Awaitable[_T]],
+    ) -> _T:
+        """Resolve, connect, run ``work``, and disconnect — retrying transient
+        BLE errors (e.g. ESP-proxy error 133) with a fresh connection each
+        time. Always raises WyzeLockError on final failure."""
+        last: Optional[Exception] = None
+        for attempt in range(_ATTEMPTS):
+            try:
+                dev = await self._resolve(device, address)
+                client = await self._connect(dev)
+            except (BleakError, WyzeLockError, TimeoutError) as err:
+                last = err
+                await asyncio.sleep(_BACKOFF * (attempt + 1))
+                continue
+            try:
+                return await work(client)
+            except (BleakError, TimeoutError, WyzeLockError) as err:
+                last = err
+            finally:
+                await self._safe_disconnect(client)
+            await asyncio.sleep(_BACKOFF * (attempt + 1))
+        raise WyzeLockError(f"BLE operation failed after {_ATTEMPTS} attempts: {last}") from last
+
     async def async_get_state(
         self,
         *,
@@ -73,13 +108,11 @@ class WyzeLockClassic:
         address: Optional[str] = None,
     ) -> p.LockState:
         """Connect, read the lock-state characteristic, and return decoded state."""
-        dev = await self._resolve(device, address)
-        client = await self._connect(dev)
-        try:
+        async def _read(client: BleakClient) -> p.LockState:
             raw = await client.read_gatt_char(p.LOCK_STATE_UUID)
             return p.decode_state(self._uuid, raw)
-        finally:
-            await self._safe_disconnect(client)
+
+        return await self._with_client(device, address, _read)
 
     async def async_set(
         self,
@@ -89,14 +122,8 @@ class WyzeLockClassic:
         address: Optional[str] = None,
     ) -> p.LockState:
         """Lock (``True``) or unlock (``False``) via the challenge-response, then
-        return the confirmed new state. Raises WyzeLockError if the lock never
-        reports the resulting state."""
-        dev = await self._resolve(device, address)
-        client = await self._connect(dev)
-        try:
-            return await self._handshake(client, lock)
-        finally:
-            await self._safe_disconnect(client)
+        return the confirmed new state."""
+        return await self._with_client(device, address, lambda c: self._handshake(c, lock))
 
     async def async_lock(self, **kw) -> p.LockState:
         return await self.async_set(True, **kw)
