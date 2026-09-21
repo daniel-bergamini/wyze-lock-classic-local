@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import functools
 from typing import Any
 
 import voluptuous as vol
 from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 
-from .cloud import authenticate
+from .cloud import login_blocking
 from .const import CONF_API_KEY, CONF_EMAIL, CONF_KEY_ID, CONF_PASSWORD, DOMAIN
 
 try:
@@ -59,11 +60,14 @@ class WyzeLockClassicConfigFlow(ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(user_input[CONF_EMAIL].lower())
             self._abort_if_unique_id_configured()
             try:
-                await authenticate(
-                    user_input[CONF_EMAIL],
-                    user_input[CONF_PASSWORD],
-                    user_input[CONF_KEY_ID],
-                    user_input[CONF_API_KEY],
+                await self.hass.async_add_executor_job(
+                    functools.partial(
+                        login_blocking,
+                        user_input[CONF_EMAIL],
+                        user_input[CONF_PASSWORD],
+                        user_input[CONF_KEY_ID],
+                        user_input[CONF_API_KEY],
+                    )
                 )
             except TwoFactorAuthenticationEnabled:
                 return await self.async_step_2fa()
@@ -77,12 +81,15 @@ class WyzeLockClassicConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             try:
-                await authenticate(
-                    self._creds[CONF_EMAIL],
-                    self._creds[CONF_PASSWORD],
-                    self._creds[CONF_KEY_ID],
-                    self._creds[CONF_API_KEY],
-                    twofa_code=user_input["code"],
+                await self.hass.async_add_executor_job(
+                    functools.partial(
+                        login_blocking,
+                        self._creds[CONF_EMAIL],
+                        self._creds[CONF_PASSWORD],
+                        self._creds[CONF_KEY_ID],
+                        self._creds[CONF_API_KEY],
+                        user_input["code"],
+                    )
                 )
             except Exception:  # noqa: BLE001
                 errors["base"] = "invalid_2fa"

@@ -8,13 +8,14 @@ a rotated cloud token heals on restart.
 
 from __future__ import annotations
 
+import functools
 import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 
-from .cloud import authenticate, fetch_locks
+from .cloud import fetch_locks_blocking
 from .const import CONF_API_KEY, CONF_EMAIL, CONF_KEY_ID, CONF_PASSWORD, DOMAIN, PLATFORMS
 from .coordinator import WyzeLockCoordinator
 
@@ -24,10 +25,16 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = entry.data
     try:
-        client = await authenticate(
-            data[CONF_EMAIL], data[CONF_PASSWORD], data[CONF_KEY_ID], data[CONF_API_KEY]
+        # wyzeapy does blocking SSL/cert work; keep it off the event loop.
+        locks = await hass.async_add_executor_job(
+            functools.partial(
+                fetch_locks_blocking,
+                data[CONF_EMAIL],
+                data[CONF_PASSWORD],
+                data[CONF_KEY_ID],
+                data[CONF_API_KEY],
+            )
         )
-        locks = await fetch_locks(client)
     except Exception as err:  # noqa: BLE001
         # Credentials issues should trigger reauth; transient cloud failures
         # should retry. We cannot always tell them apart from wyzeapy, so treat

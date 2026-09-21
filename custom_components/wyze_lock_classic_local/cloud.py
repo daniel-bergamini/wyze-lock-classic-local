@@ -14,6 +14,7 @@ and the reusable ``ble_id`` / ``ble_token`` for the challenge-response.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -42,7 +43,7 @@ def _mac_to_address(cloud_mac: str) -> str:
     return ":".join(reversed(b)).upper()
 
 
-async def authenticate(
+async def _authenticate(
     email: str, password: str, key_id: str, api_key: str, twofa_code: Optional[str] = None
 ) -> Wyzeapy:
     """Log in. Raises TwoFactorAuthenticationEnabled if a 2FA code is needed."""
@@ -56,7 +57,34 @@ async def authenticate(
     return client
 
 
-async def fetch_locks(client: Wyzeapy) -> List[LockCredentials]:
+def login_blocking(
+    email: str, password: str, key_id: str, api_key: str, twofa_code: Optional[str] = None
+) -> None:
+    """Verify credentials. Blocking — run via hass.async_add_executor_job.
+
+    wyzeapy builds its SSL context and loads cert files synchronously, so this
+    must run off the HA event loop. Raises on bad credentials, and
+    TwoFactorAuthenticationEnabled if a 2FA code is needed.
+    """
+    asyncio.run(_authenticate(email, password, key_id, api_key, twofa_code))
+
+
+def fetch_locks_blocking(
+    email: str, password: str, key_id: str, api_key: str
+) -> List[LockCredentials]:
+    """Authenticate and return every YD.LO1 lock's BLE credentials. Blocking —
+    run via hass.async_add_executor_job (see login_blocking)."""
+    return asyncio.run(_authenticate_and_fetch(email, password, key_id, api_key))
+
+
+async def _authenticate_and_fetch(
+    email: str, password: str, key_id: str, api_key: str
+) -> List[LockCredentials]:
+    client = await _authenticate(email, password, key_id, api_key)
+    return await _fetch_locks(client)
+
+
+async def _fetch_locks(client: Wyzeapy) -> List[LockCredentials]:
     """Return BLE credentials for every YD.LO1 lock on the account."""
     service = await client.lock_service
     devices = await service.get_object_list()
