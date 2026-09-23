@@ -119,20 +119,26 @@ class WyzeLockClassic:
         *,
         device: Optional[BLEDevice] = None,
         address: Optional[str] = None,
-    ) -> "tuple[p.LockState, Optional[int]]":
-        """Read lock state and battery in a single connection.
+    ) -> "tuple[p.LockState, Optional[int], Optional[bool]]":
+        """Read lock state, battery, and door position in a single connection.
 
-        Battery is best-effort: if that read fails, state is still returned with
-        battery None (a failed state read still raises and retries).
+        Battery and door are best-effort: if either read fails, state is still
+        returned (a failed state read raises and retries). Door is None when the
+        lock's open/close detection is uncalibrated.
         """
-        async def _read(client: BleakClient) -> "tuple[p.LockState, Optional[int]]":
+        async def _read(client: BleakClient) -> "tuple[p.LockState, Optional[int], Optional[bool]]":
             state = p.decode_state(self._uuid, await client.read_gatt_char(p.LOCK_STATE_UUID))
             battery: Optional[int] = None
+            door: Optional[bool] = None
             try:
                 battery = p.decode_battery(self._uuid, await client.read_gatt_char(p.BATTERY_UUID))
             except (BleakError, TimeoutError):
                 pass
-            return state, battery
+            try:
+                door = p.decode_door(self._uuid, await client.read_gatt_char(p.DOOR_STATE_UUID))
+            except (BleakError, TimeoutError):
+                pass
+            return state, battery, door
 
         return await self._with_client(device, address, _read)
 

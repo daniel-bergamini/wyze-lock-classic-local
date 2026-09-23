@@ -22,6 +22,7 @@ class LockData:
 
     locked: bool
     battery: int | None
+    door_open: bool | None  # None = uncalibrated / unknown
 
 
 class WyzeLockCoordinator(DataUpdateCoordinator[LockData]):
@@ -55,10 +56,10 @@ class WyzeLockCoordinator(DataUpdateCoordinator[LockData]):
 
     async def _async_update_data(self) -> LockData:
         try:
-            state, battery = await self._lock.async_read_status(device=self._ble_device())
+            state, battery, door_open = await self._lock.async_read_status(device=self._ble_device())
         except WyzeLockError as err:
             raise UpdateFailed(str(err)) from err
-        return LockData(locked=state.locked, battery=battery)
+        return LockData(locked=state.locked, battery=battery, door_open=door_open)
 
     async def async_set(self, lock: bool) -> None:
         """Lock/unlock, then push the confirmed new state to entities."""
@@ -66,5 +67,11 @@ class WyzeLockCoordinator(DataUpdateCoordinator[LockData]):
             state = await self._lock.async_set(lock, device=self._ble_device())
         except WyzeLockError as err:
             raise UpdateFailed(str(err)) from err
-        battery = self.data.battery if self.data else None
-        self.async_set_updated_data(LockData(locked=state.locked, battery=battery))
+        prev = self.data
+        self.async_set_updated_data(
+            LockData(
+                locked=state.locked,
+                battery=prev.battery if prev else None,
+                door_open=prev.door_open if prev else None,
+            )
+        )

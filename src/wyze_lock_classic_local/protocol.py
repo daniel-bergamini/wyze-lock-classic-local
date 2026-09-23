@@ -33,7 +33,7 @@ XOR a per-command magic — verified byte-for-byte against real traffic.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 from Crypto.Cipher import AES
 
@@ -51,6 +51,11 @@ LOCK_CMD_UUID = "00002250-0000-6b63-6f6c-2e6b636f6f6c"
 # Standard Battery Level characteristic, but the value is AES-ECB encrypted
 # (uuid key) like the lock state, not a plain 0-100 byte.
 BATTERY_UUID = "00002a19-0000-1000-8000-00805f9b34fb"
+# Door-position sensor (only live once the lock's open/close detection is
+# calibrated in the Wyze app; reports 0x04 = unknown when uncalibrated).
+DOOR_STATE_UUID = "00002222-0000-6b63-6f6c-2e6b636f6f6c"
+DOOR_OPEN = 0x01
+DOOR_CLOSED = 0x02
 
 # --- L1 framing ------------------------------------------------------------
 L1_MAGIC = 0xAB
@@ -190,6 +195,18 @@ def decode_battery(lock_uuid: str, ciphertext: bytes) -> int:
     """
     plain = AES.new(state_key(lock_uuid), AES.MODE_ECB).decrypt(ciphertext)
     return plain[0]
+
+
+def decode_door(lock_uuid: str, ciphertext: bytes) -> Optional[bool]:
+    """Decrypt the door characteristic (0x2222). True=open, False=closed,
+    None=unknown (0x04, i.e. door detection not calibrated). Same AES-ECB(uuid
+    key) + ``status|ts|pad|loock`` layout as the lock state."""
+    status = AES.new(state_key(lock_uuid), AES.MODE_ECB).decrypt(ciphertext)[0]
+    if status == DOOR_OPEN:
+        return True
+    if status == DOOR_CLOSED:
+        return False
+    return None
 
 
 def build_hello(lock_uuid: str) -> bytes:

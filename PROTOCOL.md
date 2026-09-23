@@ -72,9 +72,18 @@ Example: `02 6aafc665 000000000000 6c6f6f636b` → unlocked, changed at
 `0x6aafc665`. Reads are deterministic (ECB, no IV): the same state+timestamp
 yields the same ciphertext.
 
-Other characteristics in the service (`2208/2210/2212/2222/2230`) use the same
-key and a similar `status | ts | … | "loock"` shape and carry auxiliary status
-(e.g. `2222` tracks the door sensor); only `2220` is needed for lock state.
+Other characteristics in the service use the same key and the same
+`status | ts | … | "loock"` layout:
+
+- **`00002222` — door position.** byte 0: `0x01` = open, `0x02` = closed,
+  `0x04` = unknown. It reads `0x04` until the lock's open/close detection is
+  **calibrated in the Wyze app** (calibration is wiped by a battery change), and
+  once calibrated it carries its own door-event timestamp.
+- `00002230` shadows the door (`0x16` closed / `0x15` open) in a variant record
+  (`24/16/15 | ffffff | ts | …`, no `loock` trailer); undecoded beyond that.
+- `2208/2210/2212` sit at `0xff` (uninitialized) and don't track lock or door.
+
+Only `0x2220` is needed for lock state; `0x2222` gives the optional door sensor.
 
 ## Actuation (lock / unlock)
 

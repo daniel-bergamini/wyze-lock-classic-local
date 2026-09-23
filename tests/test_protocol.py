@@ -101,6 +101,19 @@ def test_decode_battery():
     assert p.decode_battery(uuid, ct) == 100
 
 
+def test_decode_door():
+    uuid = "0123456789abcdef0123456789abcdef"
+    key = p.state_key(uuid)
+
+    def enc(status):
+        plain = bytes([status]) + (1790181405).to_bytes(4, "big") + b"\x00" * 6 + b"loock"
+        return AES.new(key, AES.MODE_ECB).encrypt(plain)
+
+    assert p.decode_door(uuid, enc(p.DOOR_OPEN)) is True
+    assert p.decode_door(uuid, enc(p.DOOR_CLOSED)) is False
+    assert p.decode_door(uuid, enc(0x04)) is None  # uncalibrated
+
+
 def test_challenge_request_is_wellformed():
     frame = p.build_challenge_request()
     parsed = p.parse_l1(frame)
