@@ -31,6 +31,24 @@ Not in the default HACS store — add it as a HACS **custom repository**:
 Requires the built-in Bluetooth integration with an adapter or ESPHome
 Bluetooth Proxy in range of each lock.
 
+## Entities
+
+Each lock exposes: **Lock** (lock/unlock + state), **Battery**, and **Door**
+(open/closed) — all read locally over BLE.
+
+### Door sensor needs calibration
+
+The **Door** sensor stays **unavailable** until you calibrate the lock's
+open/close detection in the **Wyze app** (Lock settings → open/close
+calibration). The lock reports an "unknown" value until then, and — annoyingly,
+this is the lock's own firmware behavior — **calibration is wiped whenever you
+change the batteries**, so you'll need to recalibrate after a battery swap. The
+sensor showing *unavailable* is the honest reflection of the lock not knowing
+the door position.
+
+Triggering calibration from the integration itself (so you don't have to open
+the Wyze app) may be added in a future release; it isn't implemented yet.
+
 ## Why this exists
 
 The YD.LO1 is the **original** Wyze Lock (2019/2020), distinct from the newer
